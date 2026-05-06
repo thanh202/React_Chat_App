@@ -5,11 +5,13 @@ import useUserStore from "../../../lib/userStore";
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
 import { getAvatarUrl } from "../../../utils/cloudinaryHelper";
+import useChatStore from "../../../lib/chatStore";
 
 const Chatlist = () => {
   const [addMode, SetAddMode] = useState(false);
   const [chats, setChats] = useState([]);
   const { currentUser } = useUserStore();
+  const { changeChat } = useChatStore();
 
   useEffect(() => {
     const unSub = onSnapshot(
@@ -39,6 +41,11 @@ const Chatlist = () => {
       unSub();
     };
   }, [currentUser.id]);
+
+  const handleSelect = async (chat) => {
+    console.log(chat);
+    await changeChat(chat.chatId, chat.user);
+  };
   return (
     <div className="chatList">
       <div className="search">
@@ -54,11 +61,14 @@ const Chatlist = () => {
         />
       </div>
       {chats.map((chat) => (
-        <div className="item" key={chat.chatId}>
-          <img src={getAvatarUrl(chat.user.avatar) || "./avatar.png"} alt="avatar" />
+        <div className="item" key={chat.chatId} onClick={() => handleSelect(chat)}>
+          <img
+            src={getAvatarUrl(chat.user.avatar) || "./avatar.png"}
+            alt="avatar"
+          />
           <div className="texts">
             <h2>{chat.user.username}</h2>
-            <p>Hello, how are you?</p>
+            <p>{chat.lassMessage}</p>
           </div>
         </div>
       ))}
