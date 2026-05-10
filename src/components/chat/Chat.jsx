@@ -13,6 +13,7 @@ import useChatStore from "../../lib/chatStore";
 import useUserStore from "../../lib/userStore";
 import imageUploader from "../../lib/uploadImage";
 import { format } from "timeago.js";
+import { getChatImageUrl } from "../../utils/cloudinaryHelper";
 
 const Chat = () => {
   const [chat, setChat] = useState(null);
@@ -42,7 +43,7 @@ const Chat = () => {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
+  }, [chat?.messages]);
 
   useEffect(() => {
     const unSub = onSnapshot(doc(db, "chats", chatId), (res) => {
@@ -137,7 +138,7 @@ const Chat = () => {
         {img.url && (
           <div className="message own">
             <div className="texts">
-              <img src={img.url} alt="" />
+              <img src={getChatImageUrl(img.url)} alt="" />
             </div>
           </div>
         )}

@@ -23,6 +23,8 @@ const Detail = () => {
       console.log(error);
     }
   };
+  console.log("user ", user)
+  console.log("avatar ",getAvatarUrl(user?.avatar))
   return (
     <div className="detail">
       <div className="user">
