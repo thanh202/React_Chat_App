@@ -7,9 +7,11 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
-
-export const POLYGON_AMOY_CHAIN_ID = "0x13882";
-export const POLYGON_AMOY_EXPLORER = "https://amoy.polygonscan.com/tx/";
+import {
+  DEFAULT_NETWORK_KEY,
+  getNetworkByKey,
+  getNetworkKeyForChainIdHex,
+} from "./supportedNetworks";
 
 const requireEthereum = () => {
   if (!window.ethereum) {
@@ -36,33 +38,68 @@ export const connectMetaMaskWallet = async () => {
   return { provider, address };
 };
 
-export const ensurePolygonAmoyNetwork = async () => {
+/**
+ * @param {string} networkKey - key trong SUPPORTED_NETWORKS
+ * @param {{ onSwitching?: () => void, onAdding?: () => void, onSuccess?: () => void }} callbacks
+ */
+export const switchNetwork = async (networkKey, callbacks = {}) => {
+  const network = getNetworkByKey(networkKey);
   const ethereum = requireEthereum();
-  const currentChainId = await ethereum.request({ method: "eth_chainId" });
+  const targetChainId = network.chainId;
 
-  if (currentChainId === POLYGON_AMOY_CHAIN_ID) return;
+  const currentChainId = await ethereum.request({ method: "eth_chainId" });
+  const currentKey = getNetworkKeyForChainIdHex(currentChainId);
+  if (currentKey === network.key) {
+    callbacks.onSuccess?.();
+    return network;
+  }
+
+  callbacks.onSwitching?.();
 
   try {
     await ethereum.request({
       method: "wallet_switchEthereumChain",
-      params: [{ chainId: POLYGON_AMOY_CHAIN_ID }],
+      params: [{ chainId: targetChainId }],
     });
-  } catch (error) {
-    if (error?.code !== 4902) throw error;
+    callbacks.onSuccess?.();
+    return network;
+  } catch (switchError) {
+    if (switchError?.code !== 4902) {
+      throw switchError;
+    }
+
+    callbacks.onAdding?.();
 
     await ethereum.request({
       method: "wallet_addEthereumChain",
       params: [
         {
-          chainId: POLYGON_AMOY_CHAIN_ID,
-          chainName: "Polygon Amoy Testnet",
-          nativeCurrency: { name: "POL", symbol: "POL", decimals: 18 },
-          rpcUrls: ["https://rpc-amoy.polygon.technology"],
-          blockExplorerUrls: ["https://amoy.polygonscan.com"],
+          chainId: targetChainId,
+          chainName: network.chainName,
+          rpcUrls: [network.rpcUrl],
+          nativeCurrency: {
+            name: network.currency,
+            symbol: network.currency,
+            decimals: 18,
+          },
+          blockExplorerUrls: [network.explorerUrl],
         },
       ],
     });
+
+    callbacks.onSuccess?.();
+    return network;
   }
+};
+
+/** Chain MetaMask đang active → networkKey (dùng cho đồng bộ UI). */
+export const readActiveNetworkKey = async () => {
+  if (!window.ethereum) {
+    return DEFAULT_NETWORK_KEY;
+  }
+
+  const chainId = await window.ethereum.request({ method: "eth_chainId" });
+  return getNetworkKeyForChainIdHex(chainId);
 };
 
 export const createSystemWalletRequestMessage = async ({
@@ -114,7 +151,10 @@ export const createPendingTransferMessage = async ({
   fromAddress,
   toAddress,
   amount,
+  networkKey = DEFAULT_NETWORK_KEY,
 }) => {
+  const network = getNetworkByKey(networkKey);
+
   const messageRef = await addDoc(collection(db, "chats", chatId, "messages"), {
     senderId,
     receiverId,
@@ -126,7 +166,10 @@ export const createPendingTransferMessage = async ({
       fromAddress,
       toAddress,
       amount,
-      tokenSymbol: "POL",
+      tokenSymbol: network.currency,
+      network: network.label,
+      networkKey: network.key,
+      chainId: network.chainId,
       status: "pending",
     },
   });
@@ -147,8 +190,8 @@ export const updateTransferStatus = async (chatId, messageId, nextStatus, blockN
   await updateDoc(doc(db, "chats", chatId, "messages", messageId), updatePayload);
 };
 
-export const sendNativeToken = async ({ toAddress, amount }) => {
-  await ensurePolygonAmoyNetwork();
+export const sendNativeToken = async ({ toAddress, amount, networkKey = DEFAULT_NETWORK_KEY }) => {
+  await switchNetwork(networkKey);
   const ethereum = requireEthereum();
   const provider = new BrowserProvider(ethereum);
   const signer = await provider.getSigner();
@@ -157,5 +200,5 @@ export const sendNativeToken = async ({ toAddress, amount }) => {
     value: parseEther(amount),
   });
 
-  return { txResponse, provider };
+  return { txResponse, provider, network: getNetworkByKey(networkKey) };
 };

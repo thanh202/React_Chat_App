@@ -1,5 +1,10 @@
 import { useMemo } from "react";
 import { getDefaultWallet } from "../../lib/walletService";
+import {
+  NETWORK_OPTIONS,
+  getNetworkByKey,
+  getNetworkSelectLabel,
+} from "../../lib/supportedNetworks";
 
 const CryptoTransferModal = ({
   isOpen,
@@ -7,13 +12,16 @@ const CryptoTransferModal = ({
   receiverWallets,
   selectedSenderWallet,
   selectedReceiverWallet,
+  selectedNetwork,
   amount,
   onSenderWalletChange,
   onReceiverWalletChange,
+  onNetworkChange,
   onAmountChange,
   onConfirm,
   onClose,
   isSubmitting,
+  isSwitchingNetwork,
   onAddNewWallet,
   onSetDefaultWallet,
 }) => {
@@ -25,19 +33,39 @@ const CryptoTransferModal = ({
     () => getDefaultWallet(receiverWallets)?.address ?? "",
     [receiverWallets],
   );
+  const activeNetwork = useMemo(
+    () => getNetworkByKey(selectedNetwork),
+    [selectedNetwork],
+  );
 
   if (!isOpen) return null;
+
+  const isBusy = isSubmitting || isSwitchingNetwork;
 
   return (
     <div className="cryptoModalOverlay">
       <div className="cryptoModal">
-        <h3>Chuyen POL</h3>
+        <h3>Chuyen {activeNetwork.currency}</h3>
+        <label>
+          Mang luoi
+          <select
+            value={selectedNetwork}
+            onChange={(e) => onNetworkChange(e.target.value)}
+            disabled={isBusy}
+          >
+            {NETWORK_OPTIONS.map((network) => (
+              <option value={network.key} key={network.key}>
+                {getNetworkSelectLabel(network)}
+              </option>
+            ))}
+          </select>
+        </label>
         <label>
           Vi gui
           <select
             value={selectedSenderWallet || defaultSenderWallet}
             onChange={(e) => onSenderWalletChange(e.target.value)}
-            disabled={isSubmitting}
+            disabled={isBusy}
           >
             {senderWallets.map((wallet) => (
               <option value={wallet.address} key={wallet.address}>
@@ -48,13 +76,13 @@ const CryptoTransferModal = ({
           </select>
         </label>
         <div className="walletActions">
-          <button type="button" onClick={onAddNewWallet} disabled={isSubmitting}>
+          <button type="button" onClick={onAddNewWallet} disabled={isBusy}>
             Them vi moi
           </button>
           <button
             type="button"
             onClick={() => onSetDefaultWallet(selectedSenderWallet || defaultSenderWallet)}
-            disabled={isSubmitting || !(selectedSenderWallet || defaultSenderWallet)}
+            disabled={isBusy || !(selectedSenderWallet || defaultSenderWallet)}
           >
             Dat lam mac dinh
           </button>
@@ -64,7 +92,7 @@ const CryptoTransferModal = ({
           <select
             value={selectedReceiverWallet || defaultReceiverWallet}
             onChange={(e) => onReceiverWalletChange(e.target.value)}
-            disabled={isSubmitting}
+            disabled={isBusy}
           >
             {receiverWallets.map((wallet) => (
               <option value={wallet.address} key={wallet.address}>
@@ -75,22 +103,26 @@ const CryptoTransferModal = ({
           </select>
         </label>
         <label>
-          So tien (POL)
+          So tien ({activeNetwork.currency})
           <input
             type="number"
             min="0"
             step="0.0001"
             value={amount}
             onChange={(e) => onAmountChange(e.target.value)}
-            disabled={isSubmitting}
+            disabled={isBusy}
           />
         </label>
         <div className="actions">
-          <button type="button" onClick={onClose} disabled={isSubmitting}>
+          <button type="button" onClick={onClose} disabled={isBusy}>
             Huy
           </button>
-          <button type="button" onClick={onConfirm} disabled={isSubmitting}>
-            {isSubmitting ? "Dang xu ly..." : "Xac nhan chuyen khoan"}
+          <button type="button" onClick={onConfirm} disabled={isBusy}>
+            {isSubmitting
+              ? "Dang xu ly..."
+              : isSwitchingNetwork
+                ? "Dang chuyen mang..."
+                : "Xac nhan chuyen khoan"}
           </button>
         </div>
       </div>

@@ -18,16 +18,22 @@ import { format } from "timeago.js";
 import { getChatImageUrl } from "../../utils/cloudinaryHelper";
 import { toast } from "react-toastify";
 import CryptoTransferModal from "./CryptoTransferModal";
+import CryptoReceiptCard from "./CryptoReceiptCard";
 import {
-  POLYGON_AMOY_EXPLORER,
   connectMetaMaskWallet,
   createPendingTransferMessage,
   createSystemWalletRequestMessage,
   createTextMessage,
+  readActiveNetworkKey,
   sendNativeToken,
+  switchNetwork,
   updateSystemWalletRequestStatus,
   updateTransferStatus,
 } from "../../lib/cryptoTransferService";
+import {
+  DEFAULT_NETWORK_KEY,
+  getNetworkKeyForChainIdHex,
+} from "../../lib/supportedNetworks";
 import {
   getDefaultWallet,
   addWalletAddressIfNotExists,
@@ -48,7 +54,9 @@ const Chat = () => {
   const [activeSenderWallet, setActiveSenderWallet] = useState("");
   const [selectedReceiverWallet, setSelectedReceiverWallet] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
+  const [selectedNetwork, setSelectedNetwork] = useState(DEFAULT_NETWORK_KEY);
   const [isTransferring, setIsTransferring] = useState(false);
+  const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
   const [pendingSystemRequestId, setPendingSystemRequestId] = useState("");
   const [img, setImg] = useState({
     file: null,
@@ -94,6 +102,39 @@ const Chat = () => {
     };
   }, [chatId]);
 
+  useEffect(() => {
+    if (!isTransferModalOpen) return undefined;
+
+    const ethereum = window.ethereum;
+    if (!ethereum) return undefined;
+
+    let cancelled = false;
+
+    const syncFromWallet = async () => {
+      try {
+        const key = await readActiveNetworkKey();
+        if (!cancelled) {
+          setSelectedNetwork(key);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    void syncFromWallet();
+
+    const onChainChanged = (chainId) => {
+      setSelectedNetwork(getNetworkKeyForChainIdHex(chainId));
+    };
+
+    ethereum.on?.("chainChanged", onChainChanged);
+
+    return () => {
+      cancelled = true;
+      ethereum.removeListener?.("chainChanged", onChainChanged);
+    };
+  }, [isTransferModalOpen]);
+
   const syncUserChatPreview = async (lastMessageText) => {
     const userIDs = [currentUser.id, user.id];
 
@@ -104,7 +145,9 @@ const Chat = () => {
       if (!userChatsSnapshot.exists()) return;
 
       const userChatsData = userChatsSnapshot.data();
-      const chatIndex = userChatsData.chats.findIndex((c) => c.chatId === chatId);
+      const chatIndex = userChatsData.chats.findIndex(
+        (c) => c.chatId === chatId,
+      );
 
       if (chatIndex < 0) return;
 
@@ -156,7 +199,11 @@ const Chat = () => {
 
       if (!nextSenderWallets.length) {
         const { address } = await connectMetaMaskWallet();
-        nextSenderWallets = await linkWalletAddress(currentUser.id, address, true);
+        nextSenderWallets = await linkWalletAddress(
+          currentUser.id,
+          address,
+          true,
+        );
         setSenderWallets(nextSenderWallets);
         await useUserStore.getState().fetchUserInfo(currentUser.id);
         toast.success("Da lien ket vi gui. Tiep tuc chuyen khoan.");
@@ -176,9 +223,13 @@ const Chat = () => {
         return;
       }
 
-      setSelectedSenderWallet(getDefaultWallet(nextSenderWallets)?.address ?? "");
+      setSelectedSenderWallet(
+        getDefaultWallet(nextSenderWallets)?.address ?? "",
+      );
       setActiveSenderWallet(getDefaultWallet(nextSenderWallets)?.address ?? "");
-      setSelectedReceiverWallet(getDefaultWallet(nextReceiverWallets)?.address ?? "");
+      setSelectedReceiverWallet(
+        getDefaultWallet(nextReceiverWallets)?.address ?? "",
+      );
       setIsTransferModalOpen(true);
     } catch (error) {
       toast.error(error.message ?? "Khong the khoi tao chuyen khoan");
@@ -232,9 +283,10 @@ const Chat = () => {
         throw new Error("Vi dang ket noi khong trung voi vi gui da chon");
       }
 
-      const { txResponse, provider } = await sendNativeToken({
+      const { txResponse, provider, network } = await sendNativeToken({
         toAddress: toAddress,
         amount,
+        networkKey: selectedNetwork,
       });
 
       const pendingMessageId = await createPendingTransferMessage({
@@ -245,8 +297,9 @@ const Chat = () => {
         fromAddress,
         toAddress,
         amount,
+        networkKey: selectedNetwork,
       });
-      await syncUserChatPreview(`Chuyen ${amount} POL`);
+      await syncUserChatPreview(`Chuyen ${amount} ${network.currency}`);
 
       setIsTransferModalOpen(false);
       setTransferAmount("");
@@ -303,9 +356,38 @@ const Chat = () => {
     }
   };
 
+  const handleNetworkChange = async (networkKey) => {
+    setSelectedNetwork(networkKey);
+    setIsSwitchingNetwork(true);
+
+    try {
+      await switchNetwork(networkKey, {
+        onSwitching: () =>
+          toast.info("Dang yeu cau chuyen mang...", {
+            toastId: "switch-network",
+          }),
+        onAdding: () =>
+          toast.info("Dang tu dong them cau hinh mang moi...", {
+            toastId: "add-network",
+          }),
+        onSuccess: () =>
+          toast.success("Chuyen mang thanh cong!", {
+            toastId: "switch-success",
+          }),
+      });
+    } catch (error) {
+      toast.error(error.message ?? "Khong the chuyen mang");
+    } finally {
+      setIsSwitchingNetwork(false);
+    }
+  };
+
   const handleSetDefaultWallet = async (walletAddress) => {
     try {
-      const nextWallets = await setDefaultWalletAddress(currentUser.id, walletAddress);
+      const nextWallets = await setDefaultWalletAddress(
+        currentUser.id,
+        walletAddress,
+      );
       const defaultWallet = getDefaultWallet(nextWallets)?.address ?? "";
       setSenderWallets(nextWallets);
       setSelectedSenderWallet(defaultWallet);
@@ -342,29 +424,8 @@ const Chat = () => {
     }
 
     if (message.type === "crypto_transaction") {
-      const tx = message.transactionDetails ?? {};
       return (
-        <div className="receiptCard">
-          <h4>Crypto Transfer Receipt</h4>
-          <p>{message.content}</p>
-          <p>
-            <strong>So tien:</strong> {tx.amount} {tx.tokenSymbol}
-          </p>
-          <p>
-            <strong>Trang thai:</strong> {tx.status}
-          </p>
-          <p className="addressLine">
-            <strong>From:</strong> {tx.fromAddress}
-          </p>
-          <p className="addressLine">
-            <strong>To:</strong> {tx.toAddress}
-          </p>
-          {tx.txHash && (
-            <a href={`${POLYGON_AMOY_EXPLORER}${tx.txHash}`} target="_blank" rel="noreferrer">
-              Xem tren Polygonscan
-            </a>
-          )}
-        </div>
+        <CryptoReceiptCard message={message} currentUserId={currentUser.id} />
       );
     }
 
@@ -485,13 +546,16 @@ const Chat = () => {
         receiverWallets={receiverWallets}
         selectedSenderWallet={selectedSenderWallet}
         selectedReceiverWallet={selectedReceiverWallet}
+        selectedNetwork={selectedNetwork}
         amount={transferAmount}
         onSenderWalletChange={handleSenderWalletChange}
         onReceiverWalletChange={setSelectedReceiverWallet}
+        onNetworkChange={handleNetworkChange}
         onAmountChange={setTransferAmount}
         onConfirm={handleConfirmTransfer}
         onClose={() => setIsTransferModalOpen(false)}
         isSubmitting={isTransferring}
+        isSwitchingNetwork={isSwitchingNetwork}
         onAddNewWallet={handleAddNewWallet}
         onSetDefaultWallet={handleSetDefaultWallet}
       />
