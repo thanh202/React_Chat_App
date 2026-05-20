@@ -68,7 +68,7 @@ const Chat = () => {
     file: null,
     url: "",
   });
-  const { chatId, user, isCurrentUserBlocked, isReceiverBlocked } =
+  const { chatId, user, isCurrentUserBlocked, isReceiverBlocked, closeChat } =
     useChatStore();
   const { currentUser } = useUserStore();
 
@@ -486,19 +486,35 @@ const Chat = () => {
   };
 
   return (
-    <div className="chat">
-      <div className="top">
-        <div className="user">
-          <img src={user?.avatar || "/avatar.png"} alt="avatar" />
-          <div className="texts">
-            <span>{user?.username}</span>
-            <p>{user?.bio}</p>
+    <div className="chat flex h-full min-h-0 w-full flex-col border-white/10 md:border-l">
+      <div className="top flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-3 py-3 sm:px-4 md:px-5 md:py-4">
+        <button
+          type="button"
+          onClick={closeChat}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-lg font-bold text-white transition hover:bg-white/20 md:hidden"
+          aria-label="Quay lại danh sách"
+        >
+          ←
+        </button>
+        <div className="user flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+          <img
+            src={user?.avatar || "/avatar.png"}
+            alt="avatar"
+            className="h-11 w-11 shrink-0 rounded-full object-cover sm:h-14 sm:w-14"
+          />
+          <div className="texts flex min-w-0 flex-col gap-0.5">
+            <span className="truncate text-base font-bold sm:text-lg">
+              {user?.username}
+            </span>
+            <p className="truncate text-xs text-slate-400 sm:text-sm">
+              {user?.bio}
+            </p>
           </div>
         </div>
-        <div className="icons">
-          <img src="./phone.png" alt="phone" />
-          <img src="./video.png" alt="video" />
-          <img src="./info.png" alt="info" />
+        <div className="icons flex shrink-0 gap-3 sm:gap-4">
+          <img src="./phone.png" alt="phone" className="h-5 w-5 cursor-pointer opacity-80" />
+          <img src="./video.png" alt="video" className="h-5 w-5 cursor-pointer opacity-80" />
+          <img src="./info.png" alt="info" className="hidden h-5 w-5 cursor-pointer opacity-80 sm:block lg:hidden" />
         </div>
       </div>
       <div className="center">
@@ -525,8 +541,8 @@ const Chat = () => {
         <div ref={endRef}></div>
       </div>
 
-      <div className="bottom">
-        <div className="icons">
+      <div className="bottom flex shrink-0 flex-wrap items-center gap-2 border-t border-white/10 p-2 sm:gap-3 sm:p-3 md:p-4">
+        <div className="icons flex shrink-0 gap-2 sm:gap-3">
           <label htmlFor="file">
             <img src="./img.png" alt="" />
           </label>
@@ -561,22 +577,23 @@ const Chat = () => {
           </div>
         </div>
         <button
-          className="sendButton"
+          className="sendButton min-h-[44px] shrink-0 rounded-lg px-3 text-sm sm:px-4 sm:text-base"
           onClick={handleSend}
           disabled={isCurrentUserBlocked || isReceiverBlocked}
         >
-          Send
+          <img src="./icons8-send-24.png" alt=""/>
         </button>
         <button
-          className="sendButton transferButton"
+          className="sendButton transferButton min-h-[44px] shrink-0 rounded-lg px-2 text-xs sm:px-3 sm:text-sm"
           onClick={handleTransferClick}
           disabled={isCurrentUserBlocked || isReceiverBlocked}
         >
-          Chuyen tien
+          <span className="hidden sm:inline"><img src="./icons8-coin-64.png" alt=""/></span>
+          <span className="sm:hidden"><img src="./icons8-coin-64.png" alt=""/></span>
         </button>
       </div>
       {receiverWallets.length === 0 && pendingSystemRequestId && (
-        <div className="walletRequestBanner">
+        <div className="walletRequestBanner flex flex-col gap-2 border-t border-white/10 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-4">
           <span>Nguoi nhan chua co vi. Ban co the gui nhac lai.</span>
           <button type="button" onClick={handleSendWalletRequest}>
             Gui yeu cau lien ket vi

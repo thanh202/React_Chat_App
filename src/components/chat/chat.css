@@ -1,7 +1,7 @@
 .chat {
-  flex: 2;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -56,15 +56,17 @@
   }
 
   .center {
-    padding: 20px;
+    padding: 12px;
     flex: 1;
-    overflow-y: scroll;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     display: flex;
     flex-direction: column;
     gap: 20px;
 
     .message {
-      max-width: 70%;
+      max-width: 88%;
       display: flex;
       gap: 20px;
 
@@ -109,13 +111,23 @@
       }
     }
   }
+  .bottom input {
+    min-width: 0;
+    flex: 1;
+    min-height: 44px;
+  }
+
+  @media (min-width: 768px) {
+    .center {
+      padding: 20px;
+    }
+
+    .message {
+      max-width: 70%;
+    }
+  }
+
   .bottom {
-    padding: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    gap: 20px;
     margin-top: auto;
     .icons {
       display: flex;

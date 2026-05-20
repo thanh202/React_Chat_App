@@ -75,12 +75,12 @@ const Login = () => {
     }
   };
   return (
-    <div className="login">
+    <div className="login flex h-full min-h-0 w-full flex-col gap-6 overflow-y-auto p-4 md:flex-row md:items-center md:justify-center md:gap-10 md:p-8">
       <div className="item">
         <h2>Welcome back,</h2>
         <form onSubmit={handleLogin}>
           <input type="text" placeholder="Email" name="email" />
-          <input type="text" placeholder="Password" name="password" />
+          <input type="password" placeholder="Password" name="password" />
           <button disabled={loading}>{loading ? "Signing In..." : "Sign In"}</button>
         </form>
       </div>

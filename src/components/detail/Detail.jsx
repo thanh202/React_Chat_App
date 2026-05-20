@@ -26,7 +26,7 @@ const Detail = () => {
   console.log("user ", user)
   console.log("avatar ",getAvatarUrl(user?.avatar))
   return (
-    <div className="detail">
+    <div className="detail flex h-full min-h-0 w-full flex-col overflow-y-auto">
       <div className="user">
         <img src={getAvatarUrl(user?.avatar) || "./avatar.png"} alt="avatar" />
         <h2>{user?.username}</h2>

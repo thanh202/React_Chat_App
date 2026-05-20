@@ -110,7 +110,7 @@ const CryptoReceiptCard = ({ message, currentUserId }) => {
   return (
     <div
       className={`w-full max-w-[min(100%,22rem)] rounded-2xl border p-4 text-left shadow-xl shadow-black/30 backdrop-blur-sm ${cardShellClass}`}
-    >
+     style={{padding: "10px"}}>
       <div className="mb-3 flex items-start justify-between gap-2">
         <h4 className="text-sm font-semibold tracking-tight text-white">
           Biên lai chuyển tiền
