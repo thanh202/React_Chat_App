@@ -89,15 +89,28 @@ const CryptoReceiptCard = ({ message, currentUserId }) => {
   const showMismatchCta = isReceiver && !noMetaMask && chainMatches === false;
   const showChecking = isReceiver && !noMetaMask && chainMatches === null;
 
-  const statusStyles =
-    tx.status === "success"
-      ? "bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/40"
-      : tx.status === "failed"
-        ? "bg-red-500/15 text-red-200 ring-1 ring-red-400/40"
-        : "bg-amber-500/15 text-amber-100 ring-1 ring-amber-400/35";
+  const isFailed = tx.status === "failed";
+  const isSuccess = tx.status === "success";
+  const statusLabel = isSuccess
+    ? "Thành công"
+    : isFailed
+      ? "Thất bại"
+      : "Đang xử lý";
+
+  const statusStyles = isSuccess
+    ? "bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/40"
+    : isFailed
+      ? "bg-red-500/20 text-red-100 ring-1 ring-red-400/50"
+      : "bg-amber-500/15 text-amber-100 ring-1 ring-amber-400/35";
+
+  const cardShellClass = isFailed
+    ? "border-red-500/70 ring-2 ring-red-500/45 bg-gradient-to-br from-red-950/40 to-slate-900/95"
+    : "border-white/15 bg-gradient-to-br from-slate-900/95 to-slate-800/90";
 
   return (
-    <div className="w-full max-w-[min(100%,22rem)] rounded-2xl border border-white/15 bg-gradient-to-br from-slate-900/95 to-slate-800/90 p-4 text-left shadow-xl shadow-black/30 backdrop-blur-sm" style={{padding: "10px"}}>
+    <div
+      className={`w-full max-w-[min(100%,22rem)] rounded-2xl border p-4 text-left shadow-xl shadow-black/30 backdrop-blur-sm ${cardShellClass}`}
+    >
       <div className="mb-3 flex items-start justify-between gap-2">
         <h4 className="text-sm font-semibold tracking-tight text-white">
           Biên lai chuyển tiền
@@ -105,11 +118,18 @@ const CryptoReceiptCard = ({ message, currentUserId }) => {
         <span
           className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase ${statusStyles}`}
         >
-          {tx.status ?? "—"}
+          {statusLabel}
         </span>
       </div>
 
       <p className="mb-3 text-xs leading-relaxed text-slate-300">{message.content}</p>
+
+      {isFailed && (
+        <p className="mb-3 rounded-lg border border-red-400/40 bg-red-500/15 px-3 py-2 text-[11px] font-medium leading-relaxed text-red-100">
+          {tx.failureMessage ??
+            "❌ Giao dịch thất bại trên mạng lưới. Vui lòng kiểm tra lại trên trình khám phá khối."}
+        </p>
+      )}
 
       <dl className="space-y-2 text-xs text-slate-200">
         <div className="flex justify-between gap-2 border-b border-white/10 pb-2">

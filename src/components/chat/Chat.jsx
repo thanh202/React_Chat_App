@@ -17,6 +17,12 @@ import imageUploader from "../../lib/uploadImage";
 import { format } from "timeago.js";
 import { getChatImageUrl } from "../../utils/cloudinaryHelper";
 import { toast } from "react-toastify";
+import {
+  dismissTransferLoadingToast,
+  showBlockchainErrorToast,
+  showTransferLoadingToast,
+  showTransferSuccessToast,
+} from "../../lib/blockchainToast";
 import CryptoTransferModal from "./CryptoTransferModal";
 import CryptoReceiptCard from "./CryptoReceiptCard";
 import {
@@ -271,11 +277,14 @@ const Chat = () => {
     const amount = transferAmount?.trim();
 
     if (!fromAddress || !toAddress || !amount || Number(amount) <= 0) {
-      toast.error("Vui long nhap day du thong tin chuyen khoan.");
+      toast.error("Vui lòng nhập đầy đủ thông tin chuyển khoản.");
       return;
     }
 
     setIsTransferring(true);
+    showTransferLoadingToast();
+
+    let pendingMessageId = null;
 
     try {
       const { address } = await connectMetaMaskWallet();
@@ -284,16 +293,21 @@ const Chat = () => {
       }
 
       const { txResponse, provider, network } = await sendNativeToken({
-        toAddress: toAddress,
+        toAddress,
         amount,
         networkKey: selectedNetwork,
       });
 
-      const pendingMessageId = await createPendingTransferMessage({
+      const txHash = txResponse?.hash;
+      if (!txHash) {
+        throw new Error("Khong nhan duoc ma giao dich tu mang luoi");
+      }
+
+      pendingMessageId = await createPendingTransferMessage({
         chatId,
         senderId: currentUser.id,
         receiverId: user.id,
-        txHash: txResponse.hash,
+        txHash,
         fromAddress,
         toAddress,
         amount,
@@ -301,11 +315,19 @@ const Chat = () => {
       });
       await syncUserChatPreview(`Chuyen ${amount} ${network.currency}`);
 
+      dismissTransferLoadingToast();
+      showTransferSuccessToast();
+
       setIsTransferModalOpen(false);
       setTransferAmount("");
 
+      const onChainFailureMessage =
+        "Giao dich da duoc ghi nhan nhung thuc thi that bai tren blockchain.";
+      const waitFailureMessage =
+        "Giao dich that bai: khong the xac nhan trang thai tren mang luoi (nghẽn mang hoac loi thuc thi).";
+
       provider
-        .waitForTransaction(txResponse.hash)
+        .waitForTransaction(txHash)
         .then(async (receipt) => {
           const nextStatus = receipt?.status === 1 ? "success" : "failed";
           await updateTransferStatus(
@@ -313,15 +335,36 @@ const Chat = () => {
             pendingMessageId,
             nextStatus,
             receipt?.blockNumber,
+            nextStatus === "failed" ? onChainFailureMessage : undefined,
           );
+          if (nextStatus === "failed") {
+            toast.error(
+              "❌ Giao dịch thất bại trên blockchain. Biên lai đã được cập nhật trong khung chat.",
+              { toastId: "crypto-transfer-onchain-failed" },
+            );
+          }
         })
-        .catch(async () => {
-          await updateTransferStatus(chatId, pendingMessageId, "failed");
+        .catch(async (waitError) => {
+          console.error("waitForTransaction failed:", waitError);
+          if (pendingMessageId) {
+            await updateTransferStatus(
+              chatId,
+              pendingMessageId,
+              "failed",
+              undefined,
+              waitFailureMessage,
+            );
+            toast.error(
+              "❌ Không xác nhận được giao dịch trên mạng. Biên lai đã chuyển sang trạng thái thất bại.",
+              { toastId: "crypto-transfer-wait-failed" },
+            );
+          }
         });
-
-      toast.success("Da tao giao dich, dang cho blockchain xac nhan.");
     } catch (error) {
-      toast.error(error.message ?? "Tao giao dich that bai");
+      console.error("handleConfirmTransfer:", error);
+      dismissTransferLoadingToast();
+      showBlockchainErrorToast(error);
+      // Chưa có txHash → không tạo tin nhắn Firestore (createPendingTransferMessage không được gọi)
     } finally {
       setIsTransferring(false);
     }

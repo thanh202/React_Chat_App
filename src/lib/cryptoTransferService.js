@@ -177,7 +177,13 @@ export const createPendingTransferMessage = async ({
   return messageRef.id;
 };
 
-export const updateTransferStatus = async (chatId, messageId, nextStatus, blockNumber) => {
+export const updateTransferStatus = async (
+  chatId,
+  messageId,
+  nextStatus,
+  blockNumber,
+  failureMessage,
+) => {
   const updatePayload = {
     "transactionDetails.status": nextStatus,
     updatedAt: serverTimestamp(),
@@ -185,6 +191,17 @@ export const updateTransferStatus = async (chatId, messageId, nextStatus, blockN
 
   if (blockNumber) {
     updatePayload["transactionDetails.blockNumber"] = blockNumber;
+  }
+
+  if (nextStatus === "failed") {
+    updatePayload.content = "Giao dich that bai";
+    updatePayload["transactionDetails.failureMessage"] =
+      failureMessage ??
+      "Giao dich that bai tren mang luoi. Vui long kiem tra lai tren trinh kham pha khoi.";
+  }
+
+  if (nextStatus === "success") {
+    updatePayload.content = "Chuyen tien thanh cong";
   }
 
   await updateDoc(doc(db, "chats", chatId, "messages", messageId), updatePayload);
