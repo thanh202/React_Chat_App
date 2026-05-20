@@ -166,5 +166,136 @@
         cursor: not-allowed;
       }
     }
+
+    .transferButton {
+      background-color: #14b8a6;
+    }
+  }
+}
+
+.walletRequestBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px 20px;
+
+  button {
+    border: none;
+    border-radius: 8px;
+    background-color: #3b82f6;
+    color: #fff;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+}
+
+.systemRequestCard {
+  background-color: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 10px;
+  padding: 14px;
+
+  p {
+    padding: 0 !important;
+    background: transparent !important;
+  }
+
+  button {
+    border: none;
+    border-radius: 8px;
+    background-color: #f59e0b;
+    color: #111827;
+    font-weight: 700;
+    padding: 8px 12px;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+}
+
+.receiptCard {
+  background-color: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 12px;
+  padding: 14px;
+
+  h4 {
+    margin: 0 0 8px;
+  }
+
+  p {
+    margin: 0 0 6px;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+
+  .addressLine {
+    word-break: break-all;
+  }
+
+  a {
+    color: #60a5fa;
+    text-decoration: underline;
+  }
+}
+
+.cryptoModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 20;
+}
+
+.cryptoModal {
+  width: min(540px, 92vw);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #0f172a;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  h3 {
+    margin: 0;
+  }
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 14px;
+  }
+
+  select,
+  input {
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(15, 23, 42, 0.9);
+    color: white;
+    padding: 10px;
+  }
+
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .walletActions {
+    display: flex;
+    gap: 10px;
+  }
+
+  button {
+    border: none;
+    border-radius: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
   }
 }

@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import "./chat.css";
 import EmojiPicker from "emoji-picker-react";
 import {
-  arrayUnion,
+  collection,
   doc,
   getDoc,
   onSnapshot,
+  orderBy,
+  query,
   updateDoc,
 } from "firebase/firestore";
 import { db } from "../../lib/firebase";
@@ -14,11 +16,40 @@ import useUserStore from "../../lib/userStore";
 import imageUploader from "../../lib/uploadImage";
 import { format } from "timeago.js";
 import { getChatImageUrl } from "../../utils/cloudinaryHelper";
+import { toast } from "react-toastify";
+import CryptoTransferModal from "./CryptoTransferModal";
+import {
+  POLYGON_AMOY_EXPLORER,
+  connectMetaMaskWallet,
+  createPendingTransferMessage,
+  createSystemWalletRequestMessage,
+  createTextMessage,
+  sendNativeToken,
+  updateSystemWalletRequestStatus,
+  updateTransferStatus,
+} from "../../lib/cryptoTransferService";
+import {
+  getDefaultWallet,
+  addWalletAddressIfNotExists,
+  getUserWallets,
+  linkWalletAddress,
+  normalizeWalletAddress,
+  setDefaultWalletAddress,
+} from "../../lib/walletService";
 
 const Chat = () => {
-  const [chat, setChat] = useState(null);
+  const [messages, setMessages] = useState([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [text, setText] = useState("");
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [senderWallets, setSenderWallets] = useState([]);
+  const [receiverWallets, setReceiverWallets] = useState([]);
+  const [selectedSenderWallet, setSelectedSenderWallet] = useState("");
+  const [activeSenderWallet, setActiveSenderWallet] = useState("");
+  const [selectedReceiverWallet, setSelectedReceiverWallet] = useState("");
+  const [transferAmount, setTransferAmount] = useState("");
+  const [isTransferring, setIsTransferring] = useState(false);
+  const [pendingSystemRequestId, setPendingSystemRequestId] = useState("");
   const [img, setImg] = useState({
     file: null,
     url: "",
@@ -43,16 +74,49 @@ const Chat = () => {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chat?.messages]);
+  }, [messages]);
 
   useEffect(() => {
-    const unSub = onSnapshot(doc(db, "chats", chatId), (res) => {
-      setChat(res.data());
+    if (!chatId) return undefined;
+
+    const messagesRef = collection(db, "chats", chatId, "messages");
+    const q = query(messagesRef, orderBy("timestamp", "asc"));
+    const unSub = onSnapshot(q, (snapshot) => {
+      const nextMessages = snapshot.docs.map((messageDoc) => ({
+        id: messageDoc.id,
+        ...messageDoc.data(),
+      }));
+      setMessages(nextMessages);
     });
+
     return () => {
       unSub();
     };
   }, [chatId]);
+
+  const syncUserChatPreview = async (lastMessageText) => {
+    const userIDs = [currentUser.id, user.id];
+
+    userIDs.forEach(async (id) => {
+      const userChatsRef = doc(db, "userchats", id);
+      const userChatsSnapshot = await getDoc(userChatsRef);
+
+      if (!userChatsSnapshot.exists()) return;
+
+      const userChatsData = userChatsSnapshot.data();
+      const chatIndex = userChatsData.chats.findIndex((c) => c.chatId === chatId);
+
+      if (chatIndex < 0) return;
+
+      userChatsData.chats[chatIndex].lastMessage = lastMessageText;
+      userChatsData.chats[chatIndex].isSeen = id === currentUser.id;
+      userChatsData.chats[chatIndex].updatedAt = Date.now();
+
+      await updateDoc(userChatsRef, {
+        chats: userChatsData.chats,
+      });
+    });
+  };
 
   const handleSend = async () => {
     if (text === "") return;
@@ -63,37 +127,14 @@ const Chat = () => {
         imgUrl = await imageUploader(img.file);
       }
 
-      await updateDoc(doc(db, "chats", chatId), {
-        messages: arrayUnion({
-          senderId: currentUser.id,
-          text,
-          createdAt: new Date(),
-          ...(imgUrl && { img: imgUrl }),
-        }),
+      await createTextMessage({
+        chatId,
+        senderId: currentUser.id,
+        receiverId: user.id,
+        text,
+        img: imgUrl,
       });
-      const userIDs = [currentUser.id, user.id];
-
-      userIDs.forEach(async (id) => {
-        //Update the user chats
-        const userChatsRef = doc(db, "userchats", id);
-        const userChatsSnapshot = await getDoc(userChatsRef);
-
-        if (userChatsSnapshot.exists()) {
-          const userChatsData = userChatsSnapshot.data();
-          const chatIndex = userChatsData.chats.findIndex(
-            (c) => c.chatId === chatId,
-          );
-
-          userChatsData.chats[chatIndex].lastMessage = text;
-          userChatsData.chats[chatIndex].isSeen =
-            id === currentUser.id ? true : false;
-          userChatsData.chats[chatIndex].updatedAt = Date.now();
-
-          await updateDoc(userChatsRef, {
-            chats: userChatsData.chats,
-          });
-        }
-      });
+      await syncUserChatPreview(text);
     } catch (error) {
       console.log(error);
     } finally {
@@ -104,6 +145,242 @@ const Chat = () => {
       setText("");
     }
   };
+
+  const handleTransferClick = async () => {
+    if (!user || !chatId) return;
+
+    try {
+      let nextSenderWallets = await getUserWallets(currentUser.id);
+      const nextReceiverWallets = await getUserWallets(user.id);
+      setReceiverWallets(nextReceiverWallets);
+
+      if (!nextSenderWallets.length) {
+        const { address } = await connectMetaMaskWallet();
+        nextSenderWallets = await linkWalletAddress(currentUser.id, address, true);
+        setSenderWallets(nextSenderWallets);
+        await useUserStore.getState().fetchUserInfo(currentUser.id);
+        toast.success("Da lien ket vi gui. Tiep tuc chuyen khoan.");
+      } else {
+        setSenderWallets(nextSenderWallets);
+      }
+
+      if (!nextReceiverWallets.length) {
+        const pendingMessageId = await createSystemWalletRequestMessage({
+          chatId,
+          senderId: currentUser.id,
+          receiverId: user.id,
+        });
+        setPendingSystemRequestId(pendingMessageId);
+        await syncUserChatPreview("Yeu cau lien ket vi de nhan tien");
+        toast.info("Nguoi nhan chua lien ket vi. Da gui yeu cau lien ket.");
+        return;
+      }
+
+      setSelectedSenderWallet(getDefaultWallet(nextSenderWallets)?.address ?? "");
+      setActiveSenderWallet(getDefaultWallet(nextSenderWallets)?.address ?? "");
+      setSelectedReceiverWallet(getDefaultWallet(nextReceiverWallets)?.address ?? "");
+      setIsTransferModalOpen(true);
+    } catch (error) {
+      toast.error(error.message ?? "Khong the khoi tao chuyen khoan");
+    }
+  };
+
+  const handleSendWalletRequest = async () => {
+    try {
+      const pendingMessageId = await createSystemWalletRequestMessage({
+        chatId,
+        senderId: currentUser.id,
+        receiverId: user.id,
+      });
+      setPendingSystemRequestId(pendingMessageId);
+      await syncUserChatPreview("Yeu cau lien ket vi de nhan tien");
+      toast.success("Da gui yeu cau lien ket vi.");
+    } catch (error) {
+      toast.error(error.message ?? "Khong gui duoc yeu cau lien ket vi");
+    }
+  };
+
+  const handleLinkWalletFromSystemRequest = async (messageId) => {
+    try {
+      const { address } = await connectMetaMaskWallet();
+      await linkWalletAddress(currentUser.id, address, true);
+      await useUserStore.getState().fetchUserInfo(currentUser.id);
+      await updateSystemWalletRequestStatus(chatId, messageId, "linked");
+      toast.success("Lien ket vi thanh cong.");
+    } catch (error) {
+      toast.error(error.message ?? "Lien ket vi that bai");
+    }
+  };
+
+  const handleConfirmTransfer = async () => {
+    const fromAddress = normalizeWalletAddress(
+      activeSenderWallet || selectedSenderWallet,
+    );
+    const toAddress = normalizeWalletAddress(selectedReceiverWallet);
+    const amount = transferAmount?.trim();
+
+    if (!fromAddress || !toAddress || !amount || Number(amount) <= 0) {
+      toast.error("Vui long nhap day du thong tin chuyen khoan.");
+      return;
+    }
+
+    setIsTransferring(true);
+
+    try {
+      const { address } = await connectMetaMaskWallet();
+      if (normalizeWalletAddress(address) !== fromAddress) {
+        throw new Error("Vi dang ket noi khong trung voi vi gui da chon");
+      }
+
+      const { txResponse, provider } = await sendNativeToken({
+        toAddress: toAddress,
+        amount,
+      });
+
+      const pendingMessageId = await createPendingTransferMessage({
+        chatId,
+        senderId: currentUser.id,
+        receiverId: user.id,
+        txHash: txResponse.hash,
+        fromAddress,
+        toAddress,
+        amount,
+      });
+      await syncUserChatPreview(`Chuyen ${amount} POL`);
+
+      setIsTransferModalOpen(false);
+      setTransferAmount("");
+
+      provider
+        .waitForTransaction(txResponse.hash)
+        .then(async (receipt) => {
+          const nextStatus = receipt?.status === 1 ? "success" : "failed";
+          await updateTransferStatus(
+            chatId,
+            pendingMessageId,
+            nextStatus,
+            receipt?.blockNumber,
+          );
+        })
+        .catch(async () => {
+          await updateTransferStatus(chatId, pendingMessageId, "failed");
+        });
+
+      toast.success("Da tao giao dich, dang cho blockchain xac nhan.");
+    } catch (error) {
+      toast.error(error.message ?? "Tao giao dich that bai");
+    } finally {
+      setIsTransferring(false);
+    }
+  };
+
+  const handleSenderWalletChange = (walletAddress) => {
+    setSelectedSenderWallet(walletAddress);
+    setActiveSenderWallet(walletAddress);
+  };
+
+  const handleAddNewWallet = async () => {
+    try {
+      const { address } = await connectMetaMaskWallet();
+      const { nextWallets, alreadyLinked } = await addWalletAddressIfNotExists(
+        currentUser.id,
+        address,
+      );
+
+      if (alreadyLinked) {
+        toast.info("Dia chi vi nay da duoc lien ket voi tai khoan cua ban");
+        return;
+      }
+
+      const normalizedAddress = normalizeWalletAddress(address);
+      setSenderWallets(nextWallets);
+      setSelectedSenderWallet(normalizedAddress);
+      setActiveSenderWallet(normalizedAddress);
+      await useUserStore.getState().fetchUserInfo(currentUser.id);
+      toast.success("Da them vi moi thanh cong");
+    } catch (error) {
+      toast.error(error.message ?? "Khong the them vi moi");
+    }
+  };
+
+  const handleSetDefaultWallet = async (walletAddress) => {
+    try {
+      const nextWallets = await setDefaultWalletAddress(currentUser.id, walletAddress);
+      const defaultWallet = getDefaultWallet(nextWallets)?.address ?? "";
+      setSenderWallets(nextWallets);
+      setSelectedSenderWallet(defaultWallet);
+      setActiveSenderWallet(defaultWallet);
+      await useUserStore.getState().fetchUserInfo(currentUser.id);
+      toast.success("Da cap nhat vi mac dinh");
+    } catch (error) {
+      toast.error(error.message ?? "Khong the dat vi mac dinh");
+    }
+  };
+
+  const renderMessageBody = (message) => {
+    if (message.type === "system_request") {
+      const isReceiverView = message.receiverId === currentUser.id;
+      const isPending = message.requestStatus !== "linked";
+
+      return (
+        <div className="systemRequestCard">
+          <p>
+            {isPending
+              ? "Nguoi gui muon chuyen tien cho ban. Vui long lien ket vi MetaMask de nhan tien."
+              : "Da lien ket vi thanh cong. Ban da co the nhan tien."}
+          </p>
+          {isReceiverView && isPending && (
+            <button
+              type="button"
+              onClick={() => handleLinkWalletFromSystemRequest(message.id)}
+            >
+              Lien ket vi ngay
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    if (message.type === "crypto_transaction") {
+      const tx = message.transactionDetails ?? {};
+      return (
+        <div className="receiptCard">
+          <h4>Crypto Transfer Receipt</h4>
+          <p>{message.content}</p>
+          <p>
+            <strong>So tien:</strong> {tx.amount} {tx.tokenSymbol}
+          </p>
+          <p>
+            <strong>Trang thai:</strong> {tx.status}
+          </p>
+          <p className="addressLine">
+            <strong>From:</strong> {tx.fromAddress}
+          </p>
+          <p className="addressLine">
+            <strong>To:</strong> {tx.toAddress}
+          </p>
+          {tx.txHash && (
+            <a href={`${POLYGON_AMOY_EXPLORER}${tx.txHash}`} target="_blank" rel="noreferrer">
+              Xem tren Polygonscan
+            </a>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <>
+        {message.img && <img src={message.img} alt="chat media" />}
+        <p>{message.text}</p>
+      </>
+    );
+  };
+
+  const formatMessageTime = (timestamp) => {
+    if (!timestamp?.toDate) return "just now";
+    return format(timestamp.toDate());
+  };
+
   return (
     <div className="chat">
       <div className="top">
@@ -121,17 +398,16 @@ const Chat = () => {
         </div>
       </div>
       <div className="center">
-        {chat?.messages?.map((message) => (
+        {messages.map((message) => (
           <div
             className={
               message.senderId === currentUser?.id ? "message own" : "message"
             }
-            key={message?.createdAt}
+            key={message.id}
           >
             <div className="texts">
-              {message.img && <img src={message.img} alt="avatar" />}
-              <p>{message.text}</p>
-              <span>{format(message.createdAt.toDate())}</span>
+              {renderMessageBody(message)}
+              <span>{formatMessageTime(message.timestamp)}</span>
             </div>
           </div>
         ))}
@@ -187,7 +463,38 @@ const Chat = () => {
         >
           Send
         </button>
+        <button
+          className="sendButton transferButton"
+          onClick={handleTransferClick}
+          disabled={isCurrentUserBlocked || isReceiverBlocked}
+        >
+          Chuyen tien
+        </button>
       </div>
+      {receiverWallets.length === 0 && pendingSystemRequestId && (
+        <div className="walletRequestBanner">
+          <span>Nguoi nhan chua co vi. Ban co the gui nhac lai.</span>
+          <button type="button" onClick={handleSendWalletRequest}>
+            Gui yeu cau lien ket vi
+          </button>
+        </div>
+      )}
+      <CryptoTransferModal
+        isOpen={isTransferModalOpen}
+        senderWallets={senderWallets}
+        receiverWallets={receiverWallets}
+        selectedSenderWallet={selectedSenderWallet}
+        selectedReceiverWallet={selectedReceiverWallet}
+        amount={transferAmount}
+        onSenderWalletChange={handleSenderWalletChange}
+        onReceiverWalletChange={setSelectedReceiverWallet}
+        onAmountChange={setTransferAmount}
+        onConfirm={handleConfirmTransfer}
+        onClose={() => setIsTransferModalOpen(false)}
+        isSubmitting={isTransferring}
+        onAddNewWallet={handleAddNewWallet}
+        onSetDefaultWallet={handleSetDefaultWallet}
+      />
     </div>
   );
 };
